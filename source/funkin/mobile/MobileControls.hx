@@ -19,10 +19,13 @@ import openfl.ui.MultitouchInputMode;
 /**
  * On-screen touch controls, drawn above the game.
  *
- * - While playing a song, the screen is split into four full-height lanes (LEFT, DOWN, UP, RIGHT)
- *   that feed `PreciseInputManager`, exactly like the note keys do, plus a pause button.
- * - Everywhere else, a d-pad and accept/back buttons feed `VirtualPad`, which `Controls` reads,
- *   so every menu works without needing its own touch code.
+ * While playing a song, the screen is split into four full-height lanes (LEFT, DOWN, UP, RIGHT)
+ * that feed `PreciseInputManager`, exactly like the note keys do, plus a pause button.
+ *
+ * Everywhere else - the main menu, story mode, freeplay, options, cutscenes, the pause menu - there
+ * is nothing to draw. Those are navigated by swiping and tapping instead of tapping on-screen
+ * buttons (see `funkin.mobile.MenuGestures` and `Controls.bindMobile`), which every menu already
+ * gets for free since they all read the same `Controls` actions a keyboard or gamepad would.
  *
  * It only draws with OpenFL vector graphics and needs no assets or storage access.
  */
@@ -44,7 +47,7 @@ class MobileControls extends Sprite
   static final ALPHA_IDLE:Float = 0.22;
   static final ALPHA_HELD:Float = 0.6;
 
-  var mode:ControlsMode = HIDDEN;
+  var shown:Bool = false;
   var zones:Array<Zone> = [];
 
   /**
@@ -80,8 +83,8 @@ class MobileControls extends Sprite
 
   function onEnterFrame(_:Event):Void
   {
-    var newMode:ControlsMode = computeMode();
-    if (newMode != mode) setMode(newMode);
+    var newShown:Bool = computeShown();
+    if (newShown != shown) setShown(newShown);
   }
 
   function onResize(_:Event):Void
@@ -98,28 +101,20 @@ class MobileControls extends Sprite
   }
 
   /**
-   * Decides which controls fit what is on screen right now.
+   * The lanes and pause button only make sense while actually playing a song.
    */
-  function computeMode():ControlsMode
+  function computeShown():Bool
   {
-    if (FlxG.state == null) return HIDDEN;
-
     var play:Null<PlayState> = PlayState.instance;
-    if (play != null && play.subState == null && !play.isInCutscene)
-    {
-      return GAMEPLAY;
-    }
-
-    // Menus, the pause menu, the game over screen and cutscenes all use the menu pad.
-    return MENU;
+    return play != null && play.subState == null && !play.isInCutscene;
   }
 
-  function setMode(newMode:ControlsMode):Void
+  function setShown(newShown:Bool):Void
   {
     releaseAll();
 
-    mode = newMode;
-    visible = mode != HIDDEN;
+    shown = newShown;
+    visible = shown;
 
     layout();
     redraw();
@@ -145,23 +140,10 @@ class MobileControls extends Sprite
   function layout():Void
   {
     zones = [];
-    if (stage == null) return;
+    if (stage == null || !shown) return;
 
     var w:Float = stage.stageWidth;
     var h:Float = stage.stageHeight;
-
-    switch (mode)
-    {
-      case GAMEPLAY:
-        layoutGameplay(w, h);
-      case MENU:
-        layoutMenu(w, h);
-      case HIDDEN:
-    }
-  }
-
-  function layoutGameplay(w:Float, h:Float):Void
-  {
     var unit:Float = Math.min(w, h) * 0.14;
 
     // The pause button comes first so it wins over the lane underneath it.
@@ -185,33 +167,6 @@ class MobileControls extends Sprite
     }
   }
 
-  function layoutMenu(w:Float, h:Float):Void
-  {
-    var unit:Float = Math.min(w, h) * 0.14;
-    var margin:Float = unit * 0.5;
-    var reach:Float = unit * 0.12;
-
-    // D-pad, bottom left.
-    var padX:Float = margin + unit * 1.5;
-    var padY:Float = h - margin - unit * 1.5;
-    zones.push(menuZone(VirtualButton.UP, Arrow(0), padX, padY - unit * 1.05, unit, reach));
-    zones.push(menuZone(VirtualButton.DOWN, Arrow(2), padX, padY + unit * 1.05, unit, reach));
-    zones.push(menuZone(VirtualButton.LEFT, Arrow(3), padX - unit * 1.05, padY, unit, reach));
-    zones.push(menuZone(VirtualButton.RIGHT, Arrow(1), padX + unit * 1.05, padY, unit, reach));
-
-    // Back and accept, bottom right.
-    zones.push(menuZone(VirtualButton.BACK, Cross, w - margin - unit * 2.65, h - margin - unit * 0.8, unit * 1.1, reach));
-    zones.push(menuZone(VirtualButton.ACCEPT, Check, w - margin - unit * 0.75, h - margin - unit * 1.6, unit * 1.1, reach));
-  }
-
-  function menuZone(button:VirtualButton, glyph:Glyph, centerX:Float, centerY:Float, size:Float, reach:Float):Zone
-  {
-    var art:Rectangle = new Rectangle(centerX - size / 2, centerY - size / 2, size, size);
-    // The touchable area is a little bigger than what is drawn, since thumbs are imprecise.
-    var hit:Rectangle = new Rectangle(art.x - reach, art.y - reach, art.width + reach * 2, art.height + reach * 2);
-    return new Zone(-1, button, glyph, 0xFFFFFF, hit, art, false);
-  }
-
   function zoneAt(x:Float, y:Float):Null<Zone>
   {
     for (zone in zones)
@@ -232,23 +187,8 @@ class MobileControls extends Sprite
 
   function onTouchMove(event:TouchEvent):Void
   {
-    var current:Null<Zone> = touches.get(event.touchPointID);
-    if (current == null || current.sticky) return;
-
-    // Menu buttons follow the finger, so sliding across the d-pad works.
-    var target:Null<Zone> = zoneAt(event.stageX, event.stageY);
-    if (target == current) return;
-
-    release(current);
-    if (target != null)
-    {
-      touches.set(event.touchPointID, target);
-      press(target);
-    }
-    else
-    {
-      touches.remove(event.touchPointID);
-    }
+    // Lanes and the pause button are both sticky: a finger keeps whatever it first touched down
+    // on, rather than following it around, since letting go mid-song would drop a held note.
   }
 
   function onTouchEnd(event:TouchEvent):Void
@@ -320,7 +260,7 @@ class MobileControls extends Sprite
     var art:Rectangle = zone.art;
     var color:Int = zone.color & 0xFFFFFF;
 
-    // In gameplay the whole lane lights up while it is held, which gives feedback across the screen.
+    // The whole lane lights up while it is held, which gives feedback across the screen.
     if (zone.sticky && held)
     {
       g.beginFill(color, 0.12);
@@ -367,17 +307,6 @@ class MobileControls extends Sprite
           }
         }
         g.endFill();
-      case Check:
-        g.lineStyle(size * 0.22, 0xFFFFFF, alpha, false, LineScaleMode.NORMAL, CapsStyle.ROUND, JointStyle.ROUND);
-        g.moveTo(cx - size * 0.4, cy + size * 0.02);
-        g.lineTo(cx - size * 0.1, cy + size * 0.32);
-        g.lineTo(cx + size * 0.42, cy - size * 0.3);
-      case Cross:
-        g.lineStyle(size * 0.22, 0xFFFFFF, alpha, false, LineScaleMode.NORMAL, CapsStyle.ROUND, JointStyle.ROUND);
-        g.moveTo(cx - size * 0.3, cy - size * 0.3);
-        g.lineTo(cx + size * 0.3, cy + size * 0.3);
-        g.moveTo(cx + size * 0.3, cy - size * 0.3);
-        g.lineTo(cx - size * 0.3, cy + size * 0.3);
       case Pause:
         g.lineStyle();
         g.beginFill(0xFFFFFF, alpha);
@@ -390,21 +319,12 @@ class MobileControls extends Sprite
   }
 }
 
-private enum ControlsMode
-{
-  HIDDEN;
-  GAMEPLAY;
-  MENU;
-}
-
 private enum Glyph
 {
   /**
    * An arrow pointing up, turned clockwise by this many quarter turns.
    */
   Arrow(quarterTurns:Int);
-  Check;
-  Cross;
   Pause;
 }
 
@@ -414,12 +334,12 @@ private enum Glyph
 private class Zone
 {
   /**
-   * The note lane this zone plays, or -1 if it is a menu button.
+   * The note lane this zone plays, or -1 if it is the pause button.
    */
   public final lane:Int;
 
   /**
-   * The menu button this zone presses. Only meaningful when `lane` is -1.
+   * The on-screen button this zone presses. Only meaningful when `lane` is -1.
    */
   public final button:VirtualButton;
 

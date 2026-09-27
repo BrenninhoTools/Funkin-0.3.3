@@ -19,6 +19,7 @@ import flixel.math.FlxAngle;
 import flixel.math.FlxPoint;
 import flixel.util.FlxColor;
 import flixel.util.FlxTimer;
+import funkin.mobile.MenuGestures;
 import funkin.mobile.VirtualPad;
 import funkin.mobile.VirtualPad.VirtualButton;
 import lime.ui.Haptic;
@@ -778,19 +779,24 @@ class Controls extends FlxActionSet
   }
 
   /**
-   * Binds the on-screen touch pad (see `funkin.mobile.MobileControls`) and the Android back button.
-   * Note lanes don't go through here, the touch pad feeds those straight to `PreciseInputManager`.
+   * Binds menu navigation to touch gestures (see `funkin.mobile.MenuGestures`), the on-screen
+   * pause button shown during gameplay (see `funkin.mobile.MobileControls`), and the Android
+   * back button. Note lanes don't go through here, gameplay touch feeds those straight to
+   * `PreciseInputManager`.
    */
   function bindMobile()
   {
     #if FUNKIN_MOBILE
-    bindVirtual(Control.UI_UP, VirtualButton.UP);
-    bindVirtual(Control.UI_DOWN, VirtualButton.DOWN);
-    bindVirtual(Control.UI_LEFT, VirtualButton.LEFT);
-    bindVirtual(Control.UI_RIGHT, VirtualButton.RIGHT);
-    bindVirtual(Control.ACCEPT, VirtualButton.ACCEPT);
-    bindVirtual(Control.CUTSCENE_ADVANCE, VirtualButton.ACCEPT);
-    bindVirtual(Control.BACK, VirtualButton.BACK);
+    // Swiping down feels like dragging the list down to reveal the item above it, and vice versa -
+    // the same "content follows the finger" convention the note lanes used to use for swipes.
+    bindGesture(Control.UI_UP, SwipeDown);
+    bindGesture(Control.UI_DOWN, SwipeUp);
+    bindGesture(Control.ACCEPT, Tap);
+    bindGesture(Control.CUTSCENE_ADVANCE, Tap);
+    // No hardware back button on iOS, and every menu's own swipe/tap gestures are already
+    // spoken for, so BACK gets a gesture that nothing else uses.
+    bindGesture(Control.BACK, TwoFingerTap);
+    // The only on-screen button left. It's only drawn during gameplay (see MobileControls).
     bindVirtual(Control.PAUSE, VirtualButton.PAUSE);
     #end
 
@@ -815,6 +821,14 @@ class Controls extends FlxActionSet
     forEachBound(control, function(action, state) action.add(new FlxActionInputDigitalVirtual(button, state)));
   }
 
+  /**
+   * Sets all actions that pertain to the control to trigger when the given touch gesture happens.
+   */
+  function bindGesture(control:Control, gesture:MobileGesture)
+  {
+    forEachBound(control, function(action, state) action.add(new FlxActionInputDigitalMobileGesture(gesture, state)));
+  }
+
   function removeKeyboard()
   {
     for (action in this.digitalActions)
@@ -823,8 +837,9 @@ class Controls extends FlxActionSet
       while (i-- > 0)
       {
         var input = action.inputs[i];
-        // The touch pad and Android back button are re-added by bindMobile(), so clear them out too.
+        // The touch pad, gestures and Android back button are re-added by bindMobile(), so clear them out too.
         if (input.device == KEYBOARD || Std.isOfType(input, FlxActionInputDigitalVirtual)
+          || Std.isOfType(input, FlxActionInputDigitalMobileGesture)
           #if android || Std.isOfType(input, FlxActionInputDigitalAndroid) #end)
           action.remove(input);
       }
@@ -1410,6 +1425,46 @@ class FlxActionInputDigitalVirtual extends FlxActionInputDigital
   {
     return VirtualPad.instance.check(button, trigger);
   }
+}
+
+/**
+ * An action input triggered by a touch gesture (see `funkin.mobile.MenuGestures`), used to
+ * navigate and confirm menus by swiping and tapping instead of tapping on-screen buttons.
+ *
+ * Gestures are one-shot pulses rather than held states, so unlike most `FlxActionInputDigital`
+ * subclasses, this one only ever answers `true` for the `JUST_PRESSED` trigger, the same trick
+ * `FlxActionInputDigitalMobileSwipeGameplay` above uses for its own swipes.
+ */
+class FlxActionInputDigitalMobileGesture extends FlxActionInputDigital
+{
+  final gesture:MobileGesture;
+
+  public function new(gesture:MobileGesture, trigger:FlxInputState)
+  {
+    super(FlxInputDevice.OTHER, gesture, trigger);
+    this.gesture = gesture;
+  }
+
+  override public function check(action:FlxAction):Bool
+  {
+    if (trigger != JUST_PRESSED) return false;
+
+    return switch (gesture)
+    {
+      case SwipeUp: MenuGestures.instance.swipedUp;
+      case SwipeDown: MenuGestures.instance.swipedDown;
+      case Tap: MenuGestures.instance.tapped;
+      case TwoFingerTap: MenuGestures.instance.twoFingerTapped;
+    }
+  }
+}
+
+enum abstract MobileGesture(Int) to Int
+{
+  var SwipeUp;
+  var SwipeDown;
+  var Tap;
+  var TwoFingerTap;
 }
 
 // Maybe this can be committed to main HaxeFlixel repo?

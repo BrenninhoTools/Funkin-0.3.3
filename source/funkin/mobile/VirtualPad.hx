@@ -5,25 +5,20 @@ import flixel.input.FlxInput;
 import flixel.input.FlxInput.FlxInputState;
 
 /**
- * The buttons of the on-screen menu pad.
+ * The buttons of the on-screen touch pad. Menus are navigated by swiping and tapping instead (see
+ * `MenuGestures`), so pause - shown only during gameplay - is the only on-screen button left.
  */
 enum abstract VirtualButton(Int) from Int to Int
 {
-  var UP = 0;
-  var DOWN = 1;
-  var LEFT = 2;
-  var RIGHT = 3;
-  var ACCEPT = 4;
-  var BACK = 5;
-  var PAUSE = 6;
+  var PAUSE = 0;
 
-  public static inline final COUNT:Int = 7;
+  public static inline final COUNT:Int = 1;
 }
 
 /**
- * Holds the state of the on-screen menu buttons, using the same state machine as a keyboard key.
- * `funkin.input.Controls` reads this through `FlxActionInputDigitalVirtual`, so every menu that
- * reacts to keyboard or gamepad also reacts to the touch pad without any changes.
+ * Holds the state of the on-screen pause button, using the same state machine as a keyboard key.
+ * `funkin.input.Controls` reads this through `FlxActionInputDigitalVirtual`, so it reacts to a tap
+ * exactly like a keyboard or gamepad press would.
  */
 class VirtualPad
 {

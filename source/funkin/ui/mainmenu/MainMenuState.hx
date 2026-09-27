@@ -306,18 +306,16 @@ class MainMenuState extends MusicBeatState
 
     if (FlxG.onMobile)
     {
+      // Touching an item directly highlights it; confirming it is left to the shared tap-to-accept
+      // gesture (see Controls.bindMobile) so a tap only ever accepts whatever item it just selected,
+      // rather than whatever was selected before the finger landed.
       var touch:FlxTouch = FlxG.touches.getFirst();
 
       if (touch != null)
       {
         for (item in menuItems)
         {
-          if (touch.overlaps(item))
-          {
-            if (menuItems.selectedIndex == item.ID && touch.justPressed) menuItems.accept();
-            else
-              menuItems.selectItem(item.ID);
-          }
+          if (touch.overlaps(item) && menuItems.selectedIndex != item.ID) menuItems.selectItem(item.ID);
         }
       }
     }
