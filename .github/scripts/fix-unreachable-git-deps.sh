@@ -15,24 +15,30 @@
 # commits included - which is NOT true of a `file://` URL or a `git config url.insteadOf`
 # rewrite (both still negotiate objects the same way a network clone would), so the mirror must
 # be referenced by a plain filesystem path for this to work.
-set -euo pipefail
+#
+# Uses process substitution (< <(...)), not a pipe, to read the dependency list: piping into the
+# loop would run it in a subshell, and a failure there wouldn't survive to fail this script - and
+# a transient failure mirroring one dependency shouldn't stop the rest from being checked.
+set -uo pipefail
 
 mirrors="${RUNNER_TEMP:-/tmp}/hmm-mirrors"
 mkdir -p "$mirrors"
 
-# Snapshot the dependency list before hmm.json starts getting patched in the loop below.
-deps="$(jq -c '.dependencies[] | select(.type == "git")' hmm.json)"
+failed=0
 
-[ -z "$deps" ] && exit 0
-
-echo "$deps" | while IFS= read -r dep; do
+while IFS= read -r dep; do
+  dep="${dep%$'\r'}" # strip a trailing \r in case jq or the input ever emits CRLF
   name=$(jq -r '.name' <<<"$dep")
   url=$(jq -r '.url' <<<"$dep")
   ref=$(jq -r '.ref' <<<"$dep")
 
   bare="$mirrors/$name.git"
   rm -rf "$bare"
-  git clone --quiet --bare "$url" "$bare"
+  if ! git clone --quiet --bare "$url" "$bare"; then
+    echo "::error::Could not clone $name from $url to check whether $ref is reachable"
+    failed=1
+    continue
+  fi
 
   if git --git-dir="$bare" cat-file -e "$ref^{commit}" 2>/dev/null; then
     # Reachable from some branch/tag, so haxelib's normal clone will work as-is.
@@ -41,10 +47,16 @@ echo "$deps" | while IFS= read -r dep; do
   fi
 
   echo "::warning::$name is pinned to $ref, which is no longer reachable from any branch of $url. Installing it from a local mirror instead."
-  git --git-dir="$bare" fetch --quiet origin "$ref"
+  if ! git --git-dir="$bare" fetch --quiet origin "$ref"; then
+    echo "::error::$name is pinned to $ref, which isn't reachable from any branch of $url, and fetching it directly by its SHA also failed - it may have been deleted upstream."
+    failed=1
+    continue
+  fi
 
   jq --arg name "$name" --arg path "$bare" \
     '(.dependencies[] | select(.name == $name) | .url) = $path' \
     hmm.json > hmm.json.tmp
   mv hmm.json.tmp hmm.json
-done
+done < <(jq -c '.dependencies[] | select(.type == "git")' hmm.json)
+
+exit "$failed"

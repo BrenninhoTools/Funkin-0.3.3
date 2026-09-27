@@ -118,6 +118,9 @@ jobs:
         fi
         haxelib list
 
+    - name: Initialize git submodules of installed libraries
+      run: bash .github/scripts/init-git-submodules.sh
+
     - name: Restore hxcpp compile cache
       uses: actions/cache@v4
       with:
@@ -234,6 +237,9 @@ jobs:
           haxelib --global run hmm install -q
         fi
         haxelib list
+
+    - name: Initialize git submodules of installed libraries
+      run: bash .github/scripts/init-git-submodules.sh
 
     - name: Restore hxcpp compile cache
       uses: actions/cache@v4
