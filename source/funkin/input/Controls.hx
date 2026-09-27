@@ -19,6 +19,8 @@ import flixel.math.FlxAngle;
 import flixel.math.FlxPoint;
 import flixel.util.FlxColor;
 import flixel.util.FlxTimer;
+import funkin.mobile.VirtualPad;
+import funkin.mobile.VirtualPad.VirtualButton;
 import lime.ui.Haptic;
 
 /**
@@ -688,7 +690,7 @@ class Controls extends FlxActionSet
     bindKeys(Control.VOLUME_MUTE, getDefaultKeybinds(scheme, Control.VOLUME_MUTE));
     bindKeys(Control.FULLSCREEN, getDefaultKeybinds(scheme, Control.FULLSCREEN));
 
-    bindMobileLol();
+    bindMobile();
   }
 
   function getDefaultKeybinds(scheme:KeyboardScheme, control:Control):Array<FlxKey> {
@@ -775,29 +777,42 @@ class Controls extends FlxActionSet
     return [];
   }
 
-  function bindMobileLol()
+  /**
+   * Binds the on-screen touch pad (see `funkin.mobile.MobileControls`) and the Android back button.
+   * Note lanes don't go through here, the touch pad feeds those straight to `PreciseInputManager`.
+   */
+  function bindMobile()
   {
-    #if FLX_TOUCH
-    // MAKE BETTER TOUCH BIND CODE
-
-    bindSwipe(Control.NOTE_UP, FlxDirectionFlags.UP, 40);
-    bindSwipe(Control.NOTE_DOWN, FlxDirectionFlags.DOWN, 40);
-    bindSwipe(Control.NOTE_LEFT, FlxDirectionFlags.LEFT, 40);
-    bindSwipe(Control.NOTE_RIGHT, FlxDirectionFlags.RIGHT, 40);
-
-    // feels more like drag when up/down are inversed
-    bindSwipe(Control.UI_UP, FlxDirectionFlags.DOWN);
-    bindSwipe(Control.UI_DOWN, FlxDirectionFlags.UP);
-    bindSwipe(Control.UI_LEFT, FlxDirectionFlags.LEFT);
-    bindSwipe(Control.UI_RIGHT, FlxDirectionFlags.RIGHT);
+    #if FUNKIN_MOBILE
+    bindVirtual(Control.UI_UP, VirtualButton.UP);
+    bindVirtual(Control.UI_DOWN, VirtualButton.DOWN);
+    bindVirtual(Control.UI_LEFT, VirtualButton.LEFT);
+    bindVirtual(Control.UI_RIGHT, VirtualButton.RIGHT);
+    bindVirtual(Control.ACCEPT, VirtualButton.ACCEPT);
+    bindVirtual(Control.CUTSCENE_ADVANCE, VirtualButton.ACCEPT);
+    bindVirtual(Control.BACK, VirtualButton.BACK);
+    bindVirtual(Control.PAUSE, VirtualButton.PAUSE);
     #end
 
     #if android
+    // The system back button goes back in menus, and pauses during a song.
     forEachBound(Control.BACK, function(action, pres)
     {
       action.add(new FlxActionInputDigitalAndroid(FlxAndroidKey.BACK, JUST_PRESSED));
     });
+    forEachBound(Control.PAUSE, function(action, pres)
+    {
+      action.add(new FlxActionInputDigitalAndroid(FlxAndroidKey.BACK, JUST_PRESSED));
+    });
     #end
+  }
+
+  /**
+   * Sets all actions that pertain to the control to trigger when the on-screen button is used.
+   */
+  function bindVirtual(control:Control, button:VirtualButton)
+  {
+    forEachBound(control, function(action, state) action.add(new FlxActionInputDigitalVirtual(button, state)));
   }
 
   function removeKeyboard()
@@ -808,7 +823,9 @@ class Controls extends FlxActionSet
       while (i-- > 0)
       {
         var input = action.inputs[i];
-        if (input.device == KEYBOARD)
+        // The touch pad and Android back button are re-added by bindMobile(), so clear them out too.
+        if (input.device == KEYBOARD || Std.isOfType(input, FlxActionInputDigitalVirtual)
+          #if android || Std.isOfType(input, FlxActionInputDigitalAndroid) #end)
           action.remove(input);
       }
     }
@@ -1376,6 +1393,25 @@ class FlxActionInputDigitalMobileSwipeGameplay extends FlxActionInputDigital
   }
 }
 
+/**
+ * An action input triggered by a button of the on-screen touch pad (see `funkin.mobile.VirtualPad`).
+ */
+class FlxActionInputDigitalVirtual extends FlxActionInputDigital
+{
+  final button:VirtualButton;
+
+  public function new(button:VirtualButton, trigger:FlxInputState)
+  {
+    super(FlxInputDevice.OTHER, button, trigger);
+    this.button = button;
+  }
+
+  override public function check(action:FlxAction):Bool
+  {
+    return VirtualPad.instance.check(button, trigger);
+  }
+}
+
 // Maybe this can be committed to main HaxeFlixel repo?
 #if android
 class FlxActionInputDigitalAndroid extends FlxActionInputDigital
@@ -1392,7 +1428,7 @@ class FlxActionInputDigitalAndroid extends FlxActionInputDigital
 
   override public function check(Action:FlxAction):Bool
   {
-    returnswitch(trigger)
+    return switch(trigger)
     {
       #if android
       case PRESSED: FlxG.android.checkStatus(inputID, PRESSED) || FlxG.android.checkStatus(inputID, PRESSED);

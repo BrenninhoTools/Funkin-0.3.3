@@ -14,6 +14,7 @@ import funkin.modding.module.ModuleHandler;
 import funkin.play.character.CharacterData.CharacterDataParser;
 import funkin.save.Save;
 import funkin.util.FileUtil;
+import funkin.util.PlatformUtil;
 import funkin.util.macro.ClassMacro;
 import polymod.backends.PolymodAssets.PolymodAssetType;
 import polymod.format.ParseRules.TextFileFormat;
@@ -41,7 +42,8 @@ class PolymodHandler
     #elseif REDIRECT_ASSETS_FOLDER
     '../../../../example_mods'
     #else
-    'mods'
+    // On mobile this resolves into the app's private storage, so no storage permission is needed.
+    PlatformUtil.getDataPath('mods')
     #end;
 
   static final CORE_FOLDER:Null<String> =

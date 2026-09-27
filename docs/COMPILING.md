@@ -18,3 +18,17 @@
     - HTML5: Compiles without any extra setup
 6. If you are targeting for native, you may need to run `lime rebuild PLATFORM` and `lime rebuild PLATFORM -debug`
 7. `lime test PLATFORM` ! Add `-debug` to enable several debug features such as time travel (`PgUp`/`PgDn` in Play State).
+
+## Mobile (Android and iOS)
+
+The game is packaged as `FNF: 0.3.3` with the package name `com.funkin.fnf033`.
+
+- Build it with `lime build android -arm64 -release` or `lime build ios -arm64 -release -nosign` (iOS needs macOS and Xcode).
+- The `build.yml` GitHub workflow does both and uploads the APK and the unsigned IPA as artifacts.
+- No storage permission is needed. The save file, mods folder (`mods`) and crash logs (`logs`) live in the app's private storage.
+  The Android job fails if `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE` or similar ever ends up in the manifest, so don't add them to `Project.xml`.
+- Touch controls are drawn by `funkin.mobile.MobileControls`. During a song the screen is split into four lanes plus a pause button,
+  everywhere else there is a d-pad with accept and back buttons. The Android back button also works.
+- Video cutscenes are skipped on mobile, since there is no video backend for it yet.
+- To keep updates installable on Android, add your keystore as the repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+  `ANDROID_KEY_ALIAS` and optionally `ANDROID_KEY_PASSWORD`. Without them the APK is signed with a throwaway key.

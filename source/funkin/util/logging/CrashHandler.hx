@@ -11,7 +11,15 @@ import flixel.FlxG.FlxRenderMethod;
 @:nullSafety
 class CrashHandler
 {
-  public static final LOG_FOLDER = 'logs';
+  /**
+   * Where crash logs are written. On mobile this is inside the app's private storage.
+   */
+  public static var LOG_FOLDER(get, never):String;
+
+  static function get_LOG_FOLDER():String
+  {
+    return funkin.util.PlatformUtil.getDataPath('logs');
+  }
 
   /**
    * Called before exiting the game when a standard error occurs, like a thrown exception.

@@ -331,6 +331,61 @@ class PreciseInputManager extends FlxKeyManager<FlxKey, PreciseInputList>
     }
   }
 
+  /**
+   * Which note directions are currently held down by the on-screen touch pad.
+   */
+  var _touchHeld:Map<NoteDirection, Bool> = new Map<NoteDirection, Bool>();
+
+  /**
+   * Presses a note direction from the on-screen touch pad, as if a bound key was pressed.
+   * @param noteDirection The direction of the lane that was touched.
+   */
+  public function handleTouchPress(noteDirection:NoteDirection):Void
+  {
+    if (_touchHeld.get(noteDirection) ?? false) return;
+    _touchHeld.set(noteDirection, true);
+
+    var timestamp:Int64 = getCurrentTimestamp();
+    timestamp -= Conductor.instance.inputOffset * Constants.NS_PER_MS;
+
+    onInputPressed.dispatch(
+      {
+        noteDirection: noteDirection,
+        timestamp: timestamp
+      });
+    _dirPressTimestamps.set(noteDirection, timestamp);
+  }
+
+  /**
+   * Releases a note direction from the on-screen touch pad, as if a bound key was released.
+   * @param noteDirection The direction of the lane that was released.
+   */
+  public function handleTouchRelease(noteDirection:NoteDirection):Void
+  {
+    if (!(_touchHeld.get(noteDirection) ?? false)) return;
+    _touchHeld.set(noteDirection, false);
+
+    var timestamp:Int64 = getCurrentTimestamp();
+
+    onInputReleased.dispatch(
+      {
+        noteDirection: noteDirection,
+        timestamp: timestamp
+      });
+    _dirReleaseTimestamps.set(noteDirection, timestamp);
+  }
+
+  /**
+   * Releases every note direction held by the touch pad, such as when the touch pad is hidden mid-press.
+   */
+  public function releaseAllTouch():Void
+  {
+    for (noteDirection in DIRECTIONS)
+    {
+      handleTouchRelease(noteDirection);
+    }
+  }
+
   function handleButtonDown(gamepad:FlxGamepad, button:LimeGamepadButton, timestamp:Int64):Void
   {
     var buttonId:FlxGamepadInputID = FlxGamepadUtil.getInputID(gamepad, button);

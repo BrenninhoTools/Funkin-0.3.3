@@ -25,6 +25,37 @@ class PlatformUtil
   }
 
   /**
+   * Returns true if the game is running on a phone or tablet (Android or iOS).
+   */
+  public static inline function isMobile():Bool
+  {
+    #if FUNKIN_MOBILE
+    return true;
+    #else
+    return false;
+    #end
+  }
+
+  /**
+   * Resolves a path for data the game WRITES at runtime (mods folder, logs, and so on).
+   *
+   * On mobile this points into the app's private storage, which needs no storage permission.
+   * The working directory is read-only there, so relative paths would fail.
+   * On every other platform the path is returned unchanged, relative to the executable.
+   *
+   * @param relativePath A path relative to the game's data directory.
+   * @return The path to use with `sys.io.File` and `sys.FileSystem`.
+   */
+  public static function getDataPath(relativePath:String):String
+  {
+    #if FUNKIN_MOBILE
+    return haxe.io.Path.join([lime.system.System.applicationStorageDirectory, relativePath]);
+    #else
+    return relativePath;
+    #end
+  }
+
+  /**
    * Detects and returns the current host platform.
    * Always returns `HTML5` on web, regardless of the computer running that browser.
    * @return The host platform, or `null` if the platform could not be detected.

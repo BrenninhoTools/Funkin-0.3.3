@@ -96,7 +96,9 @@ class VideoCutscene
     #elseif hxCodec
     playVideoNative(rawFilePath);
     #else
-    throw "No video support for this platform!";
+    // No video backend on this platform (mobile), so skip straight past the cutscene.
+    trace('No video support for this platform, skipping video cutscene: $rawFilePath');
+    finishVideo(0.5);
     #end
   }
 

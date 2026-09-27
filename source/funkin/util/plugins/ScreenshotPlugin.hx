@@ -38,7 +38,15 @@ typedef ScreenshotPluginParams =
  */
 class ScreenshotPlugin extends FlxBasic
 {
-  public static final SCREENSHOT_FOLDER = 'screenshots';
+  /**
+   * Where screenshots are saved. On mobile this is inside the app's private storage.
+   */
+  public static var SCREENSHOT_FOLDER(get, never):String;
+
+  static function get_SCREENSHOT_FOLDER():String
+  {
+    return funkin.util.PlatformUtil.getDataPath('screenshots');
+  }
 
   var _hotkeys:Array<FlxKey>;
 

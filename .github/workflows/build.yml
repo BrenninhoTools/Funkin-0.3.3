@@ -1,0 +1,244 @@
+name: Build mobile (Android and iOS)
+
+# Builds FNF: 0.3.3 (com.funkin.fnf033) for Android and iOS on GitHub-hosted runners.
+# The game only uses the app's private storage, so neither build asks for storage permission;
+# the Android job fails if one ever sneaks into the manifest.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+    - '**.md'
+    - 'docs/**'
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HAXE_VERSION: 4.3.4
+  # Android toolchain. Bump these together with Lime if the Android build starts failing on tool versions.
+  JAVA_VERSION: '17'
+  NDK_VERSION: r25c
+  ANDROID_PLATFORMS: 'platforms;android-35 platforms;android-34'
+  ANDROID_BUILD_TOOLS: '35.0.0'
+
+jobs:
+
+  android:
+    name: Android (arm64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - name: Free up disk space
+      run: |
+        # The assets alone are ~1 GB, and the Android build needs several times that.
+        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+        df -h /
+
+    # Assets and art are committed to this repository, so no submodules are needed.
+    - name: Checkout repo
+      uses: actions/checkout@v4
+
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: ${{ env.JAVA_VERSION }}
+
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install Android SDK packages
+      run: |
+        sdkmanager ${{ env.ANDROID_PLATFORMS }} "build-tools;${{ env.ANDROID_BUILD_TOOLS }}"
+
+    - name: Set up Android NDK
+      id: ndk
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: ${{ env.NDK_VERSION }}
+
+    - name: Install native dependencies for Lime
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y g++ libgl1-mesa-dev libglu1-mesa-dev libasound2-dev libpulse-dev \
+          libx11-dev libxext-dev libxi-dev libxrandr-dev libxinerama-dev
+
+    - name: Set up Haxe
+      uses: krdlab/setup-haxe@v1
+      with:
+        haxe-version: ${{ env.HAXE_VERSION }}
+
+    - name: Restore cached Haxe libraries
+      id: cache-hmm
+      uses: actions/cache@v4
+      with:
+        path: .haxelib
+        key: haxe-hmm-${{ runner.os }}-${{ hashFiles('hmm.json') }}
+
+    - name: Install Haxe libraries
+      run: |
+        haxelib setup "$HOME/haxelib"
+        haxelib --global install hmm
+        haxelib newrepo
+        if [ "${{ steps.cache-hmm.outputs.cache-hit }}" != "true" ]; then
+          haxelib --global run hmm install -q
+        fi
+        haxelib list
+
+    - name: Restore hxcpp compile cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/hxcpp_cache
+        key: haxe-hxcpp-android-${{ github.ref_name }}-${{ github.sha }}
+        restore-keys: haxe-hxcpp-android-${{ github.ref_name }}
+
+    - name: Configure Lime for Android
+      run: |
+        echo "HXCPP_COMPILE_CACHE=${{ runner.temp }}/hxcpp_cache" >> "$GITHUB_ENV"
+        echo 'HXCPP_CACHE_MB=4096' >> "$GITHUB_ENV"
+        haxelib run lime config ANDROID_SDK "$ANDROID_HOME"
+        haxelib run lime config ANDROID_NDK_ROOT "${{ steps.ndk.outputs.ndk-path }}"
+        haxelib run lime config JAVA_HOME "$JAVA_HOME"
+        haxelib run lime config ANDROID_SETUP true
+
+    - name: Rebuild Lime native libraries
+      run: |
+        haxelib run lime rebuild linux || echo "Host rebuild skipped"
+        haxelib run lime rebuild android -arm64 -release
+
+    - name: Build game
+      timeout-minutes: 180
+      run: |
+        haxelib run lime build android -arm64 -release -v
+
+    - name: Check permissions (no storage access allowed)
+      run: |
+        APK=$(find export -name '*.apk' | head -n1)
+        echo "APK: $APK"
+        PERMISSIONS=$("$ANDROID_HOME/build-tools/${{ env.ANDROID_BUILD_TOOLS }}/aapt2" dump permissions "$APK")
+        echo "$PERMISSIONS"
+        if echo "$PERMISSIONS" | grep -Eq 'EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE|READ_MEDIA|MEDIA_LOCATION'; then
+          echo "::error::The APK requests a storage permission. The game must only use its private storage."
+          exit 1
+        fi
+
+    - name: Sign APK
+      env:
+        KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      run: |
+        BUILD_TOOLS="$ANDROID_HOME/build-tools/${{ env.ANDROID_BUILD_TOOLS }}"
+        APK=$(find export -name '*.apk' | head -n1)
+
+        if [ -n "$KEYSTORE_BASE64" ]; then
+          # Your own keystore, so updates install over each other.
+          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+          STORE_PASS="$KEYSTORE_PASSWORD"
+          ALIAS="$KEY_ALIAS"
+          KEY_PASS="${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+        else
+          # No keystore configured: sign with a throwaway key so the APK is at least installable.
+          # Each run gets a different key, so uninstall the old build before installing a new one.
+          keytool -genkeypair -keystore release.keystore -storepass android -keypass android \
+            -alias fnf033 -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=FNF 0.3.3 CI"
+          STORE_PASS=android
+          ALIAS=fnf033
+          KEY_PASS=android
+        fi
+
+        "$BUILD_TOOLS/zipalign" -p -f 4 "$APK" aligned.apk
+        "$BUILD_TOOLS/apksigner" sign --ks release.keystore --ks-pass "pass:$STORE_PASS" \
+          --ks-key-alias "$ALIAS" --key-pass "pass:$KEY_PASS" --out FNF-0.3.3-android.apk aligned.apk
+        "$BUILD_TOOLS/apksigner" verify FNF-0.3.3-android.apk
+        rm -f release.keystore aligned.apk
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: FNF-0.3.3-android
+        path: FNF-0.3.3-android.apk
+        if-no-files-found: error
+
+  ios:
+    name: iOS (arm64, unsigned)
+    runs-on: macos-latest
+    timeout-minutes: 240
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v4
+
+    - name: Set up Haxe
+      uses: krdlab/setup-haxe@v1
+      with:
+        haxe-version: ${{ env.HAXE_VERSION }}
+
+    - name: Restore cached Haxe libraries
+      id: cache-hmm
+      uses: actions/cache@v4
+      with:
+        path: .haxelib
+        key: haxe-hmm-${{ runner.os }}-${{ hashFiles('hmm.json') }}
+
+    - name: Install Haxe libraries
+      run: |
+        haxelib setup "$HOME/haxelib"
+        haxelib --global install hmm
+        haxelib newrepo
+        if [ "${{ steps.cache-hmm.outputs.cache-hit }}" != "true" ]; then
+          haxelib --global run hmm install -q
+        fi
+        haxelib list
+
+    - name: Restore hxcpp compile cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/hxcpp_cache
+        key: haxe-hxcpp-ios-${{ github.ref_name }}-${{ github.sha }}
+        restore-keys: haxe-hxcpp-ios-${{ github.ref_name }}
+
+    - name: Configure hxcpp cache
+      run: |
+        echo "HXCPP_COMPILE_CACHE=${{ runner.temp }}/hxcpp_cache" >> "$GITHUB_ENV"
+        echo 'HXCPP_CACHE_MB=4096' >> "$GITHUB_ENV"
+
+    - name: Rebuild Lime native libraries
+      run: |
+        haxelib run lime rebuild mac || echo "Host rebuild skipped"
+        haxelib run lime rebuild ios -arm64 -release
+
+    # Signing needs an Apple developer account, so the app is built unsigned and packaged as an .ipa
+    # that can be signed and installed with AltStore, Sideloadly or similar tools.
+    - name: Build game
+      timeout-minutes: 180
+      run: |
+        haxelib run lime build ios -arm64 -release -nosign -v
+
+    - name: Package unsigned IPA
+      run: |
+        APP=$(find export -type d -name '*.app' -path '*iphoneos*' | head -n1)
+        echo "App: $APP"
+        test -n "$APP"
+        mkdir -p ipa/Payload
+        cp -R "$APP" ipa/Payload/
+        (cd ipa && zip -qry ../FNF-0.3.3-ios-unsigned.ipa Payload)
+        ls -lh FNF-0.3.3-ios-unsigned.ipa
+
+    - name: Upload IPA
+      uses: actions/upload-artifact@v4
+      with:
+        name: FNF-0.3.3-ios-unsigned
+        path: FNF-0.3.3-ios-unsigned.ipa
+        if-no-files-found: error

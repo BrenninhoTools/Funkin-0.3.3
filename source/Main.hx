@@ -22,7 +22,7 @@ class Main extends Sprite
   var gameHeight:Int = 720; // Height of the game in pixels (might be less / more in actual pixels depending on your zoom).
   var initialState:Class<FlxState> = funkin.InitState; // The FlxState the game starts with.
   var zoom:Float = -1; // If -1, zoom is automatically calculated to fit the window dimensions.
-  #if web
+  #if (web || FUNKIN_MOBILE)
   var framerate:Int = 60; // How many frames per second the game should run at.
   #else
   // TODO: This should probably be in the options menu?
@@ -118,6 +118,13 @@ class Main extends Sprite
     #end
 
     addChild(fpsCounter);
+
+    #if FUNKIN_MOBILE
+    // On-screen touch controls, drawn over everything else.
+    funkin.mobile.MobileControls.initialize(this);
+    // Don't let the screen dim or lock in the middle of a song.
+    lime.system.System.allowScreenTimeout = false;
+    #end
 
     #if hxcpp_debug_server
     trace('hxcpp_debug_server is enabled! You can now connect to the game with a debugger.');

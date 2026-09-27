@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <project>
 	<!-- _________________________ Application Settings _________________________ -->
-	<app title="Friday Night Funkin'" file="Funkin" packageName="com.funkin.fnf" package="com.funkin.fnf" main="Main" version="0.3.3" company="ninjamuffin99" />
+	<app title="FNF: 0.3.3" file="Funkin" packageName="com.funkin.fnf033" package="com.funkin.fnf033" main="Main" version="0.3.3" company="ninjamuffin99" />
 	<!--Switch Export with Unique ApplicationID and Icon-->
 	<set name="APP_ID" value="0x0100f6c013bbc000" />
 
@@ -23,6 +23,14 @@
 	<window if="desktop" orientation="landscape" fullscreen="false" resizable="true" vsync="false" />
 	<!--Mobile-specific-->
 	<window if="mobile" orientation="landscape" fullscreen="true" width="0" height="0" resizable="false" />
+
+	<!--
+		Mobile (Android / iOS)
+		Everything the game writes (save, mods, logs) lives in the app's private storage,
+		so no storage permission is requested. Lime's default Android permission list is only
+		WAKE_LOCK, INTERNET, VIBRATE and ACCESS_NETWORK_STATE; do NOT add (READ|WRITE)_EXTERNAL_STORAGE.
+	-->
+	<define name="FUNKIN_MOBILE" if="mobile" />
 	<!-- _____________________________ Path Settings ____________________________ -->
 
 	<set name="BUILD_DIR" value="export/debug" if="debug" />
@@ -31,7 +39,8 @@
 	<classpath name="source" />
 	<assets path="assets/preload" rename="assets" exclude="*.ogg|*.wav" if="web" />
 	<assets path="assets/preload" rename="assets" exclude="*.mp3|*.wav" unless="web" />
-	<define name="PRELOAD_ALL" unless="web" />
+	<!-- Mobile devices can't hold every song and week in memory at once, so libraries load on demand like on web. -->
+	<define name="PRELOAD_ALL" unless="web || mobile" />
 	<define name="NO_PRELOAD_ALL" unless="PRELOAD_ALL" />
 	<section if="PRELOAD_ALL">
 		<library name="songs" preload="true" />
@@ -212,7 +221,7 @@
 	<!-- Uncomment this to wipe your input settings. -->
 	<!-- <haxedef name="CLEAR_INPUT_SAVE"/> -->
 
-	<section if="debug" unless="NO_REDIRECT_ASSETS_FOLDER || html5 || GITHUB_BUILD">
+	<section if="debug" unless="NO_REDIRECT_ASSETS_FOLDER || html5 || mobile || GITHUB_BUILD">
 		<!--
 			Use the parent assets folder rather than the exported one
 			No more will we accidentally undo our changes!
