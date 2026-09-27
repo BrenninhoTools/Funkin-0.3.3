@@ -51,16 +51,31 @@ jobs:
         distribution: temurin
         java-version: ${{ env.JAVA_VERSION }}
 
-    # ubuntu-latest already ships an Android SDK (cmdline-tools + platform-tools on PATH via $ANDROID_HOME).
-    # android-actions/setup-android@v3 tries to additionally install the legacy "tools" package, which no
-    # longer exists in Google's repository and makes the action fail, so we drive the preinstalled sdkmanager
-    # ourselves instead.
+    # android-actions/setup-android@v3 tries to install the legacy "tools" package, which no longer
+    # exists in Google's repository and makes the action fail. Relying on whatever cmdline-tools
+    # ubuntu-latest happens to preinstall isn't reliable either ("sdkmanager: command not found" on
+    # some images), so we install our own cmdline-tools straight from Google, independent of the runner image.
+    - name: Install Android command line tools
+      env:
+        CMDLINE_TOOLS_URL: https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+      run: |
+        mkdir -p "$HOME/android-sdk/cmdline-tools"
+        curl -fsSL -o cmdline-tools.zip "$CMDLINE_TOOLS_URL"
+        unzip -q cmdline-tools.zip -d "$HOME/android-sdk/cmdline-tools"
+        # The zip extracts to a folder named "cmdline-tools"; sdkmanager expects it at ".../cmdline-tools/latest".
+        mv "$HOME/android-sdk/cmdline-tools/cmdline-tools" "$HOME/android-sdk/cmdline-tools/latest"
+        rm cmdline-tools.zip
+        echo "ANDROID_HOME=$HOME/android-sdk" >> "$GITHUB_ENV"
+        echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> "$GITHUB_ENV"
+        echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+        echo "$HOME/android-sdk/platform-tools" >> "$GITHUB_PATH"
+
     - name: Accept Android SDK licenses
-      run: yes | sdkmanager --licenses > /dev/null || true
+      run: yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses > /dev/null || true
 
     - name: Install Android SDK packages
       run: |
-        sdkmanager ${{ env.ANDROID_PLATFORMS }} "build-tools;${{ env.ANDROID_BUILD_TOOLS }}"
+        sdkmanager --sdk_root="$ANDROID_HOME" platform-tools ${{ env.ANDROID_PLATFORMS }} "build-tools;${{ env.ANDROID_BUILD_TOOLS }}"
 
     - name: Set up Android NDK
       id: ndk
@@ -85,6 +100,10 @@ jobs:
       with:
         path: .haxelib
         key: haxe-hmm-${{ runner.os }}-${{ hashFiles('hmm.json') }}
+
+    - name: Work around dependencies pinned to unreachable git commits
+      if: steps.cache-hmm.outputs.cache-hit != 'true'
+      run: bash .github/scripts/fix-unreachable-git-deps.sh
 
     - name: Install Haxe libraries
       run: |
@@ -198,6 +217,10 @@ jobs:
       with:
         path: .haxelib
         key: haxe-hmm-${{ runner.os }}-${{ hashFiles('hmm.json') }}
+
+    - name: Work around dependencies pinned to unreachable git commits
+      if: steps.cache-hmm.outputs.cache-hit != 'true'
+      run: bash .github/scripts/fix-unreachable-git-deps.sh
 
     - name: Install Haxe libraries
       run: |
