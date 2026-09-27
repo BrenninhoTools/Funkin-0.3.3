@@ -21,7 +21,10 @@ env:
   # Android toolchain. Bump these together with Lime if the Android build starts failing on tool versions.
   JAVA_VERSION: '17'
   NDK_VERSION: r25c
-  ANDROID_PLATFORMS: 'platforms;android-35 platforms;android-34'
+  # Quoted individually: this gets spliced unquoted into a `run:` script below, and an unquoted
+  # `;` is a shell statement separator, not a literal character - it silently split the sdkmanager
+  # call into multiple commands and "platforms;android-35" became just "platforms".
+  ANDROID_PLATFORMS: '"platforms;android-35" "platforms;android-34"'
   ANDROID_BUILD_TOOLS: '35.0.0'
 
 jobs:
