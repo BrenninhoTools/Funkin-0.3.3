@@ -4,6 +4,7 @@ import flixel.FlxSprite;
 import flixel.FlxState;
 import flixel.group.FlxGroup;
 import flixel.input.gamepad.FlxGamepad;
+import flixel.input.touch.FlxTouch;
 import flixel.tweens.FlxEase;
 import flixel.tweens.FlxTween;
 import flixel.util.FlxColor;
@@ -302,6 +303,14 @@ class TitleState extends MusicBeatState
       if (gamepad.justPressed.B) pressedEnter = true;
       #end
     }
+
+    #if FUNKIN_MOBILE
+    // The on-screen accept button works here too, but on the title screen a tap ANYWHERE should count,
+    // so players don't have to hunt for the small accept button just to get started.
+    if (controls.ACCEPT) pressedEnter = true;
+    var titleTouch:Null<FlxTouch> = FlxG.touches.getFirst();
+    if (titleTouch != null && titleTouch.justPressed) pressedEnter = true;
+    #end
 
     // If you spam Enter, we should skip the transition.
     if (pressedEnter && transitioning && skippedIntro)
