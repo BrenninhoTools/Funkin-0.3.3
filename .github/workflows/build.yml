@@ -51,8 +51,12 @@ jobs:
         distribution: temurin
         java-version: ${{ env.JAVA_VERSION }}
 
-    - name: Set up Android SDK
-      uses: android-actions/setup-android@v3
+    # ubuntu-latest already ships an Android SDK (cmdline-tools + platform-tools on PATH via $ANDROID_HOME).
+    # android-actions/setup-android@v3 tries to additionally install the legacy "tools" package, which no
+    # longer exists in Google's repository and makes the action fail, so we drive the preinstalled sdkmanager
+    # ourselves instead.
+    - name: Accept Android SDK licenses
+      run: yes | sdkmanager --licenses > /dev/null || true
 
     - name: Install Android SDK packages
       run: |
@@ -180,10 +184,13 @@ jobs:
     - name: Checkout repo
       uses: actions/checkout@v4
 
+    # macos-latest runners are Apple Silicon (arm64), and krdlab/setup-haxe@v1 only ships x64
+    # binaries, so it fails with "arm64 not supported". Homebrew's haxe formula is a universal
+    # build, so we use that here instead of pinning HAXE_VERSION like the Android job does.
     - name: Set up Haxe
-      uses: krdlab/setup-haxe@v1
-      with:
-        haxe-version: ${{ env.HAXE_VERSION }}
+      run: |
+        brew install haxe
+        haxe -version
 
     - name: Restore cached Haxe libraries
       id: cache-hmm
